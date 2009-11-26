@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 #include <poll.h>
 #include <unistd.h>
@@ -98,14 +99,26 @@ int main(int argc, char *argv[])
 				break;
 
 			buf[l] = '\0';
+			while (l > 0 && iscntrl(buf[l-1]))
+				buf[--l] = '\0';
 
 			id = strtol(buf, &data, 0);
-			if (data[0] == '\0' || data[1] == '\0') {
+			if (data[0] == '\0') {
 				fprintf(stderr, "missing data in input\n");
 				continue;
 			}
 
 			++data;
+
+			if (id < 0) {
+				id -= id;
+				id |= CAN_RTR_FLAG;
+			}
+
+			if (id > (1 << 11) - 1) {
+				id &= CAN_EFF_MASK | CAN_RTR_FLAG;
+				id |= CAN_EFF_FLAG;
+			}
 
 			frame.can_dlc = MIN(strlen(data), sizeof frame.data);
 			frame.can_id = id;
@@ -124,6 +137,7 @@ int main(int argc, char *argv[])
 			struct sockaddr_can	r_addr;
 			socklen_t		a_len = sizeof r_addr;
 			size_t			i;
+			uint32_t		id;
 
 			rc = recvfrom(s, &frame, sizeof frame, 0,
 				      (void *)&r_addr, &a_len);
@@ -136,10 +150,17 @@ int main(int argc, char *argv[])
 				/* EOF? */
 				break;
 
+			id = frame.can_id;
+			if (!(frame.can_id & CAN_EFF_FLAG))
+				id &= CAN_SFF_MASK;
+			else
+				id &= CAN_EFF_MASK;
 
-			printf("[%d]: %u[%u] = [",
+			printf("[%d]: %s%s%u[%u] = [",
 			       r_addr.can_ifindex,
-			       frame.can_id,
+			       frame.can_id & CAN_EFF_FLAG ? "E" : "",
+			       frame.can_id & CAN_RTR_FLAG ? "R" : "",
+			       id,
 			       frame.can_dlc);
 
 			for (i = 0; i < MIN(frame.can_dlc,
