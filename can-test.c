@@ -7,6 +7,7 @@
 #include <poll.h>
 #include <unistd.h>
 
+#include <sys/cdefs.h>
 #include <sys/param.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -16,6 +17,30 @@
 #include <linux/can.h>
 #include <linux/if.h>
 
+#define IP_TOOL	"/sbin/ip"
+
+#ifndef PF_CAN
+#  define PF_CAN	29	/* Controller Area Network.  */
+#endif
+
+#ifndef AF_CAN
+#  define AF_CAN	PF_CAN
+#endif
+
+#if (__GNUC__ * 0x100) + __GNUC_MINOR__ < 0x403
+#define spawn(_file, _arg0, _args...) ({		\
+		pid_t		pid = fork();		\
+		int		status;			\
+							\
+		if (pid == 0) {				\
+			execlp(_file, _arg0, _args);	\
+			_exit(-1);			\
+		}					\
+							\
+		waitpid(pid, &status, 0);		\
+		status == 0 ? 0 : -1;		\
+		})
+#else
 static __attribute__ ((__always_inline__))
 int spawn(char const *file, char const *arg0, ...)
 {
@@ -30,13 +55,14 @@ int spawn(char const *file, char const *arg0, ...)
 	waitpid(pid, &status, 0);
 	return status == 0 ? 0 : -1;
 }
+#endif
 
 static int setup_net(char const *iface)
 {
-	spawn("ip", "ip", "link", "set", iface, "down", NULL);
-	if (spawn("ip", "ip", "link", "set", iface,
+	spawn(IP_TOOL, "ip", "link", "set", iface, "down", NULL);
+	if (spawn(IP_TOOL, "ip", "link", "set", iface,
 		  "type", "can", "bitrate", "100000", NULL) < 0 ||
-	    spawn("ip", "ip", "link", "set", iface, "up", NULL) < 0)
+	    spawn(IP_TOOL, "ip", "link", "set", iface, "up", NULL) < 0)
 		return -1;
 
 	return 0;
